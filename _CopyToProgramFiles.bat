@@ -1,0 +1,1 @@
+robocopy barebones "C:\Program Files (x86)\Steam\steamapps\common\SteamVR\drivers\barebones" /E
