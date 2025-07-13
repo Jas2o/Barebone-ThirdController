@@ -45,13 +45,7 @@ typedef struct _Controller
 #endif
 
 bool ctrl = true;
-Gamepad gamepad; // Gamepad instance
-TController MyCtrl[2];
-int32_t Active = 1;
-
-double DegToRad(double f) {
-	return f * (3.14159265358979323846 / 180);
-}
+TController MyCtrl;
 
 inline HmdQuaternion_t HmdQuaternion_Init(double w, double x, double y, double z)
 {
@@ -68,12 +62,16 @@ inline HmdQuaternion_t HmdQuaternion_Init(double w, double x, double y, double z
 //-----------------------------------------------------------------------------
 class CBarebonesControllerDriver : public vr::ITrackedDeviceServerDriver
 {
-	int32_t ControllerIndex;
+	//int32_t ControllerIndex;
 public:
+	bool Active;
+	uint32_t FollowIndex;
+
 	CBarebonesControllerDriver()
 	{
-		Ctrl1Index_t = vr::k_unTrackedDeviceIndexInvalid;
-		Ctrl2Index_t = vr::k_unTrackedDeviceIndexInvalid;
+		Active = false;
+		FollowIndex = 0;
+		CtrlIndex_t = vr::k_unTrackedDeviceIndexInvalid;
 		m_ulPropertyContainer = vr::k_ulInvalidPropertyContainer;
 	}
 
@@ -98,10 +96,12 @@ public:
 		return q;
 	}
 
+	/*
 	virtual void SetControllerIndex(int32_t CtrlIndex)
 	{
 		ControllerIndex = CtrlIndex;
 	}
+	*/
 
 	/** This is called before an HMD is returned to the application. It will always be
 	* called before any display or tracking methods. Memory and processor use by the
@@ -110,44 +110,19 @@ public:
 	* should not be used after that point. */
 	virtual EVRInitError Activate(vr::TrackedDeviceIndex_t unObjectId)
 	{
-		switch (ControllerIndex)
-		{
-		case 0:
-			Ctrl1Index_t = unObjectId;
-			m_ulPropertyContainer = vr::VRProperties()->TrackedDeviceToPropertyContainer(Ctrl1Index_t);
-			break;
-		case 1:
-			Ctrl2Index_t = unObjectId;
-			m_ulPropertyContainer = vr::VRProperties()->TrackedDeviceToPropertyContainer(Ctrl2Index_t);
-			break;
-		}
+		CtrlIndex_t = unObjectId;
+		m_ulPropertyContainer = vr::VRProperties()->TrackedDeviceToPropertyContainer(CtrlIndex_t);
 
-		switch (ControllerIndex)
-		{
-		case 0:
-			vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, Prop_SerialNumber_String, "CTRL1Serial");
-			break;
-		case 1:
-			vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, Prop_SerialNumber_String, "CTRL2Serial");
-			break;
-		}
+		vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, Prop_SerialNumber_String, "CTRL1Serial");
 
-		switch (ControllerIndex)
-		{
-		case 0:
-			vr::VRProperties()->SetInt32Property(m_ulPropertyContainer, Prop_ControllerRoleHint_Int32, TrackedControllerRole_LeftHand);
-			break;
-		case 1:
-			vr::VRProperties()->SetInt32Property(m_ulPropertyContainer, Prop_ControllerRoleHint_Int32, TrackedControllerRole_RightHand);
-			break;
-		}
+		vr::VRProperties()->SetInt32Property(m_ulPropertyContainer, Prop_ControllerRoleHint_Int32, TrackedControllerRole_OptOut);
 
 		uint64_t supportedButtons = 0xA4;
 		vr::VRProperties()->SetUint64Property(m_ulPropertyContainer, vr::Prop_SupportedButtons_Uint64, supportedButtons);
 
 
 		vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, vr::Prop_ControllerType_String, "vive_controller");
-		vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, vr::Prop_LegacyInputProfile_String, "vive_controller");
+		//vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, vr::Prop_LegacyInputProfile_String, "vive_controller");
 
 		vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, vr::Prop_ModelNumber_String, "ViveMV");
 		vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, vr::Prop_ManufacturerName_String, "HTC");
@@ -175,34 +150,17 @@ public:
 			vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, vr::Prop_NamedIconPathDeviceAlertLow_String, "{barebones}/icons/barebones_status_ready_low.png");
 		}
 
-		
-		switch (ControllerIndex)
-		{
-			case 0:
-				vr::VRDriverInput()->CreateScalarComponent(
-					m_ulPropertyContainer, "/input/trackpad/x", &leftJoystickXInputHandle,
-					vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided
-				);
-				vr::VRDriverInput()->CreateScalarComponent(
-					m_ulPropertyContainer, "/input/trackpad/y", &leftJoystickYInputHandle,
-					vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided
-				);
-				break;
-			case 1:
-				vr::VRDriverInput()->CreateScalarComponent(
-					m_ulPropertyContainer, "/input/trackpad/x", &rightJoystickXInputHandle,
-					vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided
-				);
-				vr::VRDriverInput()->CreateScalarComponent(
-					m_ulPropertyContainer, "/input/trackpad/y", &rightJoystickYInputHandle,
-					vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided
-				);
-				break;
-		}
-		
+		vr::VRDriverInput()->CreateScalarComponent(
+			m_ulPropertyContainer, "/input/trackpad/x", &leftJoystickXInputHandle,
+			vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided
+		);
+		vr::VRDriverInput()->CreateScalarComponent(
+			m_ulPropertyContainer, "/input/trackpad/y", &leftJoystickYInputHandle,
+			vr::VRScalarType_Absolute, vr::VRScalarUnits_NormalizedTwoSided
+		);
 
 		vr::VRDriverInput()->CreateScalarComponent(
-			m_ulPropertyContainer, "/input/trigger/value", &TriggerInputHandle[ControllerIndex],
+			m_ulPropertyContainer, "/input/trigger/value", &TriggerInputHandle,
 			vr::EVRScalarType::VRScalarType_Absolute, vr::EVRScalarUnits::VRScalarUnits_NormalizedOneSided
 		);
 
@@ -228,8 +186,7 @@ public:
 	* and thread use it can when it is deactivated */
 	virtual void Deactivate()
 	{
-		Ctrl1Index_t = vr::k_unTrackedDeviceIndexInvalid;
-		Ctrl2Index_t = vr::k_unTrackedDeviceIndexInvalid;
+		CtrlIndex_t = vr::k_unTrackedDeviceIndexInvalid;
 	}
 
 	/** Handles a request from the system to put this device into standby mode. What that means is defined per-device. */
@@ -259,20 +216,20 @@ public:
 			pchResponseBuffer[0] = 0;
 	}
 
+	/*
 	void Center() {
 		double offset = 1.5;
-		for (int i = 0; i < 2; i++) {
-			if (center[i] == true) {
-				MyCtrl[i].X = 0;
-				MyCtrl[i].Y = offset;
-				MyCtrl[i].Z = 0;
-				MyCtrl[i].Yaw = 0;
-				MyCtrl[i].Pitch = 0;
-				MyCtrl[i].Roll = 0;
-				center[i] = false;
-			}
+		if (center == true) {
+			MyCtrl.X = 0;
+			MyCtrl.Y = offset;
+			MyCtrl.Z = 0;
+			MyCtrl.Yaw = 0;
+			MyCtrl.Pitch = 0;
+			MyCtrl.Roll = 0;
+			center = false;
 		}
 	}
+	*/
 
 	// ------------------------------------
 	// Tracking Methods
@@ -280,78 +237,41 @@ public:
 	virtual DriverPose_t GetPose()
 	{
 		DriverPose_t pose = { 0 };
-		TrackedDevicePose_t trackedDevicePose;
-		VRControllerState_t controllerState;
-
 		pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
 		pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
-
 		pose.qRotation = HmdQuaternion_Init(0, 0, 0, 0);
 
-		vr::TrackedDevicePose_t devicePoses[vr::k_unMaxTrackedDeviceCount];
-		vr::VRServerDriverHost()->GetRawTrackedDevicePoses(0, devicePoses, vr::k_unMaxTrackedDeviceCount);
-		vr::TrackedDevicePose_t tracker = devicePoses[0];
-		HmdQuaternion_t rot = GetRotation(tracker.mDeviceToAbsoluteTracking);
+		if (Active) {
+			//vr::TrackedDeviceIndex_t livCam = 2; //Should start as one of the controllers if LIV virtual tracker is not available
+			/* //Not working yet
+			for (vr::TrackedDeviceIndex_t idx = 0; idx < vr::k_unMaxTrackedDeviceCount; idx++)
+			{
+				PropertyContainerHandle_t handle = vr::VRProperties()->TrackedDeviceToPropertyContainer(idx);
+				std::string cType = vr::VRProperties()->GetStringProperty(handle, Prop_ControllerType_String);
+				//Have seen this as:
+				//vive_controller
+				//oculus_touch
+				//*garbage*
 
-		HmdQuaternion_t r;
-
-		float a = (tracker.mDeviceToAbsoluteTracking.m[0][0]);
-		float b = tracker.mDeviceToAbsoluteTracking.m[1][0];
-		float c = (tracker.mDeviceToAbsoluteTracking.m[2][0]);
-
-		if (center[0] == true || center[1] == true) {
-			Center();
-			pose.qRotation = rot;
-			pose.vecDriverFromHeadTranslation[2] = 3.5;
-			pose.vecPosition[0] = c / 4;
-			pose.vecPosition[2] = a * -1 / 4;
-		}
-
-		if (ControllerIndex == 0) {
-
-			pose.vecDriverFromHeadTranslation[0] = MyCtrl[0].X;
-			pose.vecDriverFromHeadTranslation[2] = MyCtrl[0].Z;
-
-			r.w = cos(DegToRad(MyCtrl[0].Yaw) * 0.5) * cos(DegToRad(MyCtrl[0].Roll) * 0.5) * cos(DegToRad(MyCtrl[0].Pitch) * 0.5) + sin(DegToRad(MyCtrl[0].Yaw) * 0.5) * sin(DegToRad(MyCtrl[0].Roll) * 0.5) * sin(DegToRad(MyCtrl[0].Pitch) * 0.5);
-			r.x = cos(DegToRad(MyCtrl[0].Yaw) * 0.5) * sin(DegToRad(MyCtrl[0].Roll) * 0.5) * cos(DegToRad(MyCtrl[0].Pitch) * 0.5) - sin(DegToRad(MyCtrl[0].Yaw) * 0.5) * cos(DegToRad(MyCtrl[0].Roll) * 0.5) * sin(DegToRad(MyCtrl[0].Pitch) * 0.5);
-			r.y = cos(DegToRad(MyCtrl[0].Yaw) * 0.5) * cos(DegToRad(MyCtrl[0].Roll) * 0.5) * sin(DegToRad(MyCtrl[0].Pitch) * 0.5) + sin(DegToRad(MyCtrl[0].Yaw) * 0.5) * sin(DegToRad(MyCtrl[0].Roll) * 0.5) * cos(DegToRad(MyCtrl[0].Pitch) * 0.5);
-			r.z = sin(DegToRad(MyCtrl[0].Yaw) * 0.5) * cos(DegToRad(MyCtrl[0].Roll) * 0.5) * cos(DegToRad(MyCtrl[0].Pitch) * 0.5) - cos(DegToRad(MyCtrl[0].Yaw) * 0.5) * sin(DegToRad(MyCtrl[0].Roll) * 0.5) * sin(DegToRad(MyCtrl[0].Pitch) * 0.5);
-
-			pose.qRotation = rot;
-
-			pose.qDriverFromHeadRotation = r;
-
-			pose.vecPosition[0] = c / 4;
-			pose.vecPosition[1] = MyCtrl[0].Y;
-			pose.vecPosition[2] = a * -1 / 4;
-
-
-			if (cnt == 100) {
-				DriverLog("%d - HMD: %f %f %f / %f %f %f\n", ControllerIndex, pose.vecPosition[0], pose.vecPosition[1], pose.vecPosition[2], rot.x, rot.y, rot.z);
+				if (!cType.empty()) {
+					DriverLog("%s", cType);
+					if (strcmp(cType.data(), "liv_virtualcamera") == 0)
+						//if (serial.find("liv_virtualcamera") != std::string::npos)
+						livCam = idx;
+				}
 			}
-		}
-		else {
+			*/
 
-			pose.vecDriverFromHeadTranslation[0] = MyCtrl[1].X;
-			pose.vecDriverFromHeadTranslation[2] = MyCtrl[1].Z;
-			
+			vr::TrackedDevicePose_t devicePoses[vr::k_unMaxTrackedDeviceCount];
+			vr::VRServerDriverHost()->GetRawTrackedDevicePoses(0, devicePoses, vr::k_unMaxTrackedDeviceCount);
+			vr::TrackedDevicePose_t tracker = devicePoses[FollowIndex];
+			HmdQuaternion_t rot = GetRotation(tracker.mDeviceToAbsoluteTracking);
 
-			r.w = cos(DegToRad(MyCtrl[1].Yaw) * 0.5) * cos(DegToRad(MyCtrl[1].Roll) * 0.5) * cos(DegToRad(MyCtrl[1].Pitch) * 0.5) + sin(DegToRad(MyCtrl[1].Yaw) * 0.5) * sin(DegToRad(MyCtrl[1].Roll) * 0.5) * sin(DegToRad(MyCtrl[1].Pitch) * 0.5);
-			r.x = cos(DegToRad(MyCtrl[1].Yaw) * 0.5) * sin(DegToRad(MyCtrl[1].Roll) * 0.5) * cos(DegToRad(MyCtrl[1].Pitch) * 0.5) - sin(DegToRad(MyCtrl[1].Yaw) * 0.5) * cos(DegToRad(MyCtrl[1].Roll) * 0.5) * sin(DegToRad(MyCtrl[1].Pitch) * 0.5);
-			r.y = cos(DegToRad(MyCtrl[1].Yaw) * 0.5) * cos(DegToRad(MyCtrl[1].Roll) * 0.5) * sin(DegToRad(MyCtrl[1].Pitch) * 0.5) + sin(DegToRad(MyCtrl[1].Yaw) * 0.5) * sin(DegToRad(MyCtrl[1].Roll) * 0.5) * cos(DegToRad(MyCtrl[1].Pitch) * 0.5);
-			r.z = sin(DegToRad(MyCtrl[1].Yaw) * 0.5) * cos(DegToRad(MyCtrl[1].Roll) * 0.5) * cos(DegToRad(MyCtrl[1].Pitch) * 0.5) - cos(DegToRad(MyCtrl[1].Yaw) * 0.5) * sin(DegToRad(MyCtrl[1].Roll) * 0.5) * sin(DegToRad(MyCtrl[1].Pitch) * 0.5);
+			pose.vecPosition[0] = tracker.mDeviceToAbsoluteTracking.m[0][3];
+			pose.vecPosition[1] = tracker.mDeviceToAbsoluteTracking.m[1][3];
+			pose.vecPosition[2] = tracker.mDeviceToAbsoluteTracking.m[2][3];
 
 			pose.qRotation = rot;
-
-			pose.qDriverFromHeadRotation = r;
-
-			pose.vecPosition[0] = c/4;
-			pose.vecPosition[1] = MyCtrl[1].Y;
-			pose.vecPosition[2] = a * -1/4;
-			
-			if (cnt == 100) {
-				DriverLog("%d - HMD: %f %f %f / %f %f %f\n", ControllerIndex, pose.vecPosition[0], pose.vecPosition[1], pose.vecPosition[2], rot.x, rot.y, rot.z);
-			}
 		}
 
 		cnt++;
@@ -359,398 +279,24 @@ public:
 			cnt = 0;
 		}
 
-		pose.poseIsValid = true;
+		pose.poseIsValid = Active;
 		pose.result = TrackingResult_Running_OK;
-		pose.deviceIsConnected = true;
-
+		pose.deviceIsConnected = Active;
 		return pose;
 	}
 
-	void ProcessHandles(int32_t index) {
-
-		// Sticks
-
-		if (float LftStX = gamepad.LeftStick_X())
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					MyCtrl[Active].Pitch = MyCtrl[Active].Pitch - LftStX * 0.5;
-				}
-			}
-			else {
-				if (act[0] == 0) {
-					MyCtrl[0].Pitch = MyCtrl[0].Pitch - LftStX * 0.5;
-				}
-				else {
-					vr::VRDriverInput()->UpdateScalarComponent(leftJoystickXInputHandle, LftStX, 0);
-				}
-			}
-		}
-		else {
-			//vr::VRDriverInput()->UpdateScalarComponent(leftJoystickXInputHandle, 0.0, 0);
-
-		}
-
-		if (float LftStY = gamepad.LeftStick_Y())
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					MyCtrl[Active].Roll = MyCtrl[Active].Roll + LftStY * 0.5;
-				}
-			}
-			else {
-				if (act[0] == 0) {
-					MyCtrl[0].Roll = MyCtrl[0].Roll + LftStY * 0.5;
-				}
-				else {
-					vr::VRDriverInput()->UpdateScalarComponent(leftJoystickYInputHandle, LftStY, 0);
-				}
-			}
-		}
-		else {
-				//vr::VRDriverInput()->UpdateScalarComponent(leftJoystickYInputHandle, 0.0, 0);
-		}
-
-		if (float RghStX = gamepad.RightStick_X())
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					if (Active == 1) {
-						vr::VRDriverInput()->UpdateScalarComponent(rightJoystickXInputHandle, RghStX, 0);
-					}
-					else {
-						vr::VRDriverInput()->UpdateScalarComponent(leftJoystickXInputHandle, RghStX, 0);
-					}
-				}
-			}
-			else {
-				if (act[1] == 0) {
-					MyCtrl[1].Pitch = MyCtrl[1].Pitch - RghStX * 0.5;
-				}
-				else {
-					vr::VRDriverInput()->UpdateScalarComponent(rightJoystickXInputHandle, RghStX, 0);
-				}
-			}
-		}
-		else {
-			if (index == Active) {
-				if (Active == 1) {
-					vr::VRDriverInput()->UpdateScalarComponent(rightJoystickXInputHandle, 0, 0);
-				}
-				else {
-					vr::VRDriverInput()->UpdateScalarComponent(leftJoystickXInputHandle, 0, 0);
-				}
-			}
-		}
-
-		if (float RghStY = gamepad.RightStick_Y())
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					if (Active == 1) {
-						vr::VRDriverInput()->UpdateScalarComponent(rightJoystickYInputHandle, RghStY, 0);
-					}
-					else {
-						vr::VRDriverInput()->UpdateScalarComponent(leftJoystickYInputHandle, RghStY, 0);
-					}
-				}
-			}
-			else {
-				if (act[1] == 0) {
-					MyCtrl[1].Roll = MyCtrl[1].Roll + RghStY * 0.5;
-				}
-				else {
-					vr::VRDriverInput()->UpdateScalarComponent(rightJoystickYInputHandle, RghStY, 0);
-				}
-			}
-		}
-		else {
-			if (index == Active) {
-				if (Active == 1) {
-					vr::VRDriverInput()->UpdateScalarComponent(rightJoystickYInputHandle, 0, 0);
-				}
-				else {
-					vr::VRDriverInput()->UpdateScalarComponent(leftJoystickYInputHandle, 0, 0);
-				}
-			}
-		}
-
-		// Dpad
-
-		if (gamepad.GetButtonPressed(xButtons.DPad_Left))
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					MyCtrl[Active].X = MyCtrl[Active].X - 0.005;
-				}
-			}
-			else {
-				MyCtrl[0].X = MyCtrl[0].X - 0.005;
-				MyCtrl[1].X = MyCtrl[1].X - 0.005;
-			}
-
-		}
-
-		if (gamepad.GetButtonPressed(xButtons.DPad_Right))
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					MyCtrl[Active].X = MyCtrl[Active].X + 0.005;
-				}
-			}
-			else {
-				MyCtrl[0].X = MyCtrl[0].X + 0.005;
-				MyCtrl[1].X = MyCtrl[1].X + 0.005;
-			}
-		}
-
-		if (gamepad.GetButtonPressed(xButtons.DPad_Up))
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					MyCtrl[Active].Z = MyCtrl[Active].Z - 0.005;
-				}
-			}
-			else {
-				MyCtrl[0].Z = MyCtrl[0].Z - 0.005;
-				MyCtrl[1].Z = MyCtrl[1].Z - 0.005;
-			}
-		}
-
-		if (gamepad.GetButtonPressed(xButtons.DPad_Down))
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					MyCtrl[Active].Z = MyCtrl[Active].Z + 0.005;
-				}
-			}
-			else {
-				MyCtrl[0].Z = MyCtrl[0].Z + 0.005;
-				MyCtrl[1].Z = MyCtrl[1].Z + 0.005;
-			}
-			
-		}
-
-		// Bummers
-
-		if (gamepad.GetButtonPressed(xButtons.L_Shoulder))
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					MyCtrl[Active].Y = MyCtrl[Active].Y + 0.002;
-				}
-			}
-			else {
-				MyCtrl[0].Y = MyCtrl[0].Y + 0.002;
-				MyCtrl[1].Y = MyCtrl[1].Y + 0.002;
-			}
-		}
-
-		if (gamepad.GetButtonPressed(xButtons.R_Shoulder))
-		{
-			if (swap == 0) {
-				if (index == Active) {
-					MyCtrl[Active].Y = MyCtrl[Active].Y - 0.002;
-				}
-			}
-			else {
-				MyCtrl[0].Y = MyCtrl[0].Y - 0.002;
-				MyCtrl[1].Y = MyCtrl[1].Y - 0.002;
-			}
-
-		}
-
-		if (gamepad.GetButtonPressed(xButtons.Back))
-		{
-			if (index == Active) {
-				if (swap == 0) {
-					center[Active] = true;
-				}
-				else {
-					center[0] = true;
-					center[1] = true;
-				}
-			}
-		}
-
-		// Singles
-
-		if (index == Active) {
-
-			// Triggers
-
-			if (float LftT = gamepad.LeftTrigger())
-			{
-				if (LftT > 0.6) {
-					vr::VRDriverInput()->UpdateScalarComponent(TriggerInputHandle[Active], LftT, 0);
-				}
-				else {
-					vr::VRDriverInput()->UpdateScalarComponent(TriggerInputHandle[Active], 0.0, 0);
-				}
-			}
-
-			if (float RghT = gamepad.RightTrigger())
-			{
-				if (RghT > 0.6) {
-					if (swap == 0 && check == 0) {
-						DriverLog("swap true");
-						swap = 1;
-						check = 1;
-					}
-					if (swap == 1 && check == 0) {
-						DriverLog("swap false");
-						swap = 0;
-						check = 1;
-					}
-				}
-				else {
-					check = 0;
-				}
-			}
-			else {
-				if (check == 1) {
-					swap = 0;
-				}
-			}
-
-			// Buttons
-
-			if (gamepad.GetButtonPressed(xButtons.A))
-			{
-				vr::VRDriverInput()->UpdateBooleanComponent(m_compA, 1, 0);
-			}
-			else {
-				vr::VRDriverInput()->UpdateBooleanComponent(m_compA, 0, 0);
-			}
-
-			if (gamepad.GetButtonPressed(xButtons.B))
-			{
-				vr::VRDriverInput()->UpdateBooleanComponent(m_compB, 1, 0);
-			}
-			else {
-				vr::VRDriverInput()->UpdateBooleanComponent(m_compB, 0, 0);
-			}
-
-			if (gamepad.GetButtonPressed(xButtons.Y))
-			{
-				vr::VRDriverInput()->UpdateBooleanComponent(m_compY, 1, 0);
-			}
-			else {
-				vr::VRDriverInput()->UpdateBooleanComponent(m_compY, 0, 0);
-			}
-
-			if (gamepad.GetButtonPressed(xButtons.X))
-			{
-				vr::VRDriverInput()->UpdateBooleanComponent(m_compX, 1, 0);
-			}
-			else {
-				vr::VRDriverInput()->UpdateBooleanComponent(m_compX, 0, 0);
-			}
-
-			// Start/select
-
-			if (gamepad.GetButtonPressed(xButtons.Start))
-			{
-				vr::VRDriverInput()->UpdateBooleanComponent(m_start, 1, 0);
-			}
-			else {
-				vr::VRDriverInput()->UpdateBooleanComponent(m_start, 0, 0);
-			}
-
-			// Sticks click
-
-			if (gamepad.GetButtonPressed(xButtons.L_Thumbstick))
-			{
-				if (ctrl == true && swap == 0) {
-					Active = 0;
-					DriverLog("%d - ctrl\n", ControllerIndex);
-					ctrl = false;
-				}
-				if (chck[0] == 0 && swap == 1) {
-					switch (act[0])
-					{
-					case 0:
-						act[0] = 1;
-						break;
-					case 1:
-						act[0] = 0;
-						break;
-					}
-					chck[0] = 1;
-				}
-				else {
-					chck[0] = 1;
-				}
-
-			} 
-			else {
-				if (chck[0] == 1 && swap == 1) {
-					chck[0] = 0;
-				}
-			}
-
-			if (gamepad.GetButtonPressed(xButtons.R_Thumbstick))
-			{
-				if (ctrl == false && swap == 0) {
-					Active = 1;
-					DriverLog("%d - ctrl\n", ControllerIndex);
-					ctrl = true;
-				}
-				if (chck[1] == 0 && swap == 1) {
-					switch (act[1])
-					{
-					case 0:
-						act[1] = 1;
-						break;
-					case 1:
-						act[1] = 0;
-						break;
-					}
-					chck[1] = 1;
-				}
-				else {
-					chck[1] = 1;
-				}
-
-			}
-			else {
-				if (chck[1] == 1 && swap == 1) {
-					chck[1] = 0;
-				}
-			}
-		}
-	}
 	void RunFrame()
 	{
-		switch (ControllerIndex)
+		//Update position here
+
+		if (CtrlIndex_t != vr::k_unTrackedDeviceIndexInvalid)
 		{
-		case 0:
-			ProcessHandles(0);
-			if (Ctrl1Index_t != vr::k_unTrackedDeviceIndexInvalid)
-			{
-				vr::VRServerDriverHost()->TrackedDevicePoseUpdated(Ctrl1Index_t, GetPose(), sizeof(DriverPose_t));
-			}
-			break;
-		case 1:
-			ProcessHandles(1);
-			if (Ctrl2Index_t != vr::k_unTrackedDeviceIndexInvalid)
-			{
-				vr::VRServerDriverHost()->TrackedDevicePoseUpdated(Ctrl2Index_t, GetPose(), sizeof(DriverPose_t));
-			}
-			break;
+			vr::VRServerDriverHost()->TrackedDevicePoseUpdated(CtrlIndex_t, GetPose(), sizeof(DriverPose_t));
 		}
 	}
 	std::string GetSerialNumber() const {
 
-		switch (ControllerIndex)
-		{
-		case 0:
-			return "CTRL1Serial";
-			break;
-		case 1:
-			return "CTRL2Serial";
-			break;
-		}
+		return "CTRL1Serial";
 	}
 
 	void ProcessEvent(const vr::VREvent_t& vrEvent)
@@ -762,7 +308,6 @@ public:
 			if (vrEvent.data.hapticVibration.componentHandle == m_compHaptic)
 			{
 				// This is where you would send a signal to your hardware to trigger actual haptic feedback
-				DriverLog("BUZZ!\n");
 			}
 		}
 		break;
@@ -770,14 +315,13 @@ public:
 	}
 
 private:
-	vr::TrackedDeviceIndex_t Ctrl1Index_t;
-	vr::TrackedDeviceIndex_t Ctrl2Index_t;
+	vr::TrackedDeviceIndex_t CtrlIndex_t;
 
 	vr::PropertyContainerHandle_t m_ulPropertyContainer;
 
 	std::string m_sSerialNumber;
 
-	vr::VRInputComponentHandle_t TriggerInputHandle[2];
+	vr::VRInputComponentHandle_t TriggerInputHandle;
 
 	vr::VRInputComponentHandle_t rightJoystickXInputHandle;
 	vr::VRInputComponentHandle_t rightJoystickYInputHandle;
@@ -794,13 +338,10 @@ private:
 	vr::VRInputComponentHandle_t m_start;
 	vr::VRInputComponentHandle_t m_back;
 
-	int swap = 0;
-	int act[2] = { 0, 0 };
 	int check = 0;
-	int chck[2] = { 0,0 };
-	bool center[2] = { true, true };
+	//bool center = true;
 
-	int cnt = 0;
+	int cnt = 0; //Count?
 };
 
 //-----------------------------------------------------------------------------
@@ -816,10 +357,12 @@ public:
 	virtual void LeaveStandby() {}
 	virtual void RunFrame();
 	virtual void Cleanup();
+	virtual void PipeThread();
 
 private:
 	CBarebonesControllerDriver *m_pController = nullptr;
-	CBarebonesControllerDriver *m_pController2 = nullptr;
+	//CBarebonesControllerDriver *m_pController2 = nullptr;
+	HANDLE inPipe;
 };
 
 static BareboneProvider g_serverDriverNull;
@@ -829,19 +372,56 @@ EVRInitError BareboneProvider::Init(vr::IVRDriverContext* pDriverContext)
 	VR_INIT_SERVER_DRIVER_CONTEXT(pDriverContext);
 	InitDriverLog(vr::VRDriverLog());
 
-	DriverLog("barebones: Creating Controller Driver\n");
-	DriverLog("barebones: Post- Creating Controller Driver\n");
+	DriverLog("barebones: Init\n");
+
+	std::string inPipeName = "\\\\.\\pipe\\OpenVRvcPipeIn";
+
+	inPipe = CreateNamedPipeA(inPipeName.c_str(),
+		PIPE_ACCESS_DUPLEX,
+		PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,   // FILE_FLAG_FIRST_PIPE_INSTANCE is not needed but forces CreateNamedPipe(..) to fail if the pipe already exists...
+		1,
+		100 * 16,
+		100 * 16,
+		NMPWAIT_USE_DEFAULT_WAIT,
+		NULL);
+
+	std::thread pipeThread(&BareboneProvider::PipeThread, this);
+	pipeThread.detach();
 
 	m_pController = new CBarebonesControllerDriver();
-	m_pController->SetControllerIndex(0);
 	vr::VRServerDriverHost()->TrackedDeviceAdded(m_pController->GetSerialNumber().c_str(), vr::TrackedDeviceClass_Controller, m_pController);
 
-
-	m_pController2 = new CBarebonesControllerDriver();
-	m_pController2->SetControllerIndex(1);
-	vr::VRServerDriverHost()->TrackedDeviceAdded(m_pController2->GetSerialNumber().c_str(), vr::TrackedDeviceClass_Controller, m_pController2);
-
 	return VRInitError_None;
+}
+
+void BareboneProvider::PipeThread()
+{
+	char buffer[100];
+	DWORD dwWritten;
+	DWORD dwRead;
+
+	for (;;)
+	{
+		ConnectNamedPipe(inPipe, NULL);
+
+		if (ReadFile(inPipe, buffer, sizeof(buffer) - 1, &dwRead, NULL) != FALSE)
+		{
+			if (buffer[0] == 0)
+				continue;
+
+			if (buffer[0] == 127)
+				m_pController->Active = false;
+			else if (buffer[0] < 64) { //k_unMaxTrackedDeviceCount
+				m_pController->FollowIndex = buffer[0];
+				m_pController->Active = true;
+			}
+			else {
+				//buffer[dwRead] = '\0'; //add terminating zero
+				//MessageBoxA(NULL, buffer, "OpenVR barebone", MB_OK);
+			}
+		}
+		DisconnectNamedPipe(inPipe);
+	}
 }
 
 void BareboneProvider::Cleanup()
@@ -849,39 +429,23 @@ void BareboneProvider::Cleanup()
 	CleanupDriverLog();
 	delete m_pController;
 	m_pController = NULL;
-	delete m_pController2;
-	m_pController2 = NULL;
 }
 
 void BareboneProvider::RunFrame()
 {
-	if (gamepad.Connected()) {
-
-		gamepad.Update();
-		if (m_pController)
-		{
-			m_pController->RunFrame();
-		}
-		if (m_pController2)
-		{
-			m_pController2->RunFrame();
-		}
-
-		vr::VREvent_t vrEvent;
-		while (vr::VRServerDriverHost()->PollNextEvent(&vrEvent, sizeof(vrEvent)))
-		{
-			if (m_pController)
-			{
-				m_pController->ProcessEvent(vrEvent);
-			}
-			if (m_pController2)
-			{
-				m_pController2->ProcessEvent(vrEvent);
-			}
-		}
-		gamepad.Refresh();
+	if (m_pController)
+	{
+		m_pController->RunFrame();
 	}
 
+	vr::VREvent_t vrEvent;
+	while (vr::VRServerDriverHost()->PollNextEvent(&vrEvent, sizeof(vrEvent)))
+	{
+		if (m_pController)
+		{
+			m_pController->ProcessEvent(vrEvent);
+		}
+	}
 }
 
 HMD_DLL_EXPORT void* HmdDriverFactory(const char* pInterfaceName, int* pReturnCode)
